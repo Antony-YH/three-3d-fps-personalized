@@ -15,7 +15,7 @@ timer.connect( document );
 // ==========================================
 let playerModel;
 let playerMixer;
-let idleAction, runAction, throwAction, currentAction;
+let idleAction, runAction, throwAction, jumpAction, currentAction;
 let isThirdPerson = true; 
 let isThrowing = false; // Bandera para saber si está lanzando
 // ==========================================
@@ -120,6 +120,7 @@ const vector3 = new THREE.Vector3();
 document.addEventListener( 'keydown', ( event ) => {
     keyStates[ event.code ] = true;
 
+    // Alternar cámara
     if ( event.code === 'KeyR' && !event.repeat ) {
         isThirdPerson = !isThirdPerson;
         if ( playerModel ) {
@@ -168,7 +169,7 @@ function throwBall() {
 
     projectileIdx = ( projectileIdx + 1 ) % projectiles.length;
 
-    // Activamos la bandera de animación de lanzamiento/ataque
+    // Activamos la bandera de animación de lanzamiento
     if ( throwAction ) {
         isThrowing = true;
     }
@@ -341,7 +342,7 @@ loader.load( 'cityam.glb', ( gltf ) => {
 // ==========================================
 loader.load( 'minihuman.glb', ( gltf ) => {
     playerModel = gltf.scene;
-    playerModel.scale.set( 0.5, 0.5, 0.5 ); 
+    playerModel.scale.set( 0.5, 0.5, 0.5 ); // Escala del personaje
 
     playerModel.traverse( child => {
         if ( child.isMesh ) {
@@ -356,30 +357,33 @@ loader.load( 'minihuman.glb', ( gltf ) => {
     if ( gltf.animations && gltf.animations.length > 0 ) {
         playerMixer = new THREE.AnimationMixer( playerModel );
         
-        // Evento: Al terminar la animación de lanzar, apagamos la bandera
+        // Al terminar de lanzar, regresar bandera a false
         playerMixer.addEventListener('finished', (e) => {
             if (e.action === throwAction) {
                 isThrowing = false;
             }
         });
 
-        // =========================================================
-        // CONFIGURACIÓN DE LOS ÍNDICES DE ANIMACIÓN
-        // Si notas que al correr hace la animación de atacar,
-        // simplemente intercambia estos números (0, 1 y 2).
-        // =========================================================
+        // ÍNDICES DE ANIMACIÓN
         const iQuieto = 0; 
         const iCorrer = 1; 
         const iLanzar = 2; 
+        const iSaltar = 3; 
 
         idleAction = playerMixer.clipAction( gltf.animations[iQuieto] );
-        runAction = playerMixer.clipAction( gltf.animations[iCorrer] );
         
-        // Configuramos la de lanzar para que solo se reproduzca UNA vez
+        if (gltf.animations.length > 1) runAction = playerMixer.clipAction( gltf.animations[iCorrer] );
+        
         if (gltf.animations.length > 2) {
             throwAction = playerMixer.clipAction( gltf.animations[iLanzar] );
             throwAction.setLoop( THREE.LoopOnce, 1 );
             throwAction.clampWhenFinished = true;
+        }
+
+        if (gltf.animations.length > 3) {
+            jumpAction = playerMixer.clipAction( gltf.animations[iSaltar] );
+            jumpAction.setLoop( THREE.LoopOnce, 1 );
+            jumpAction.clampWhenFinished = true;
         }
 
         currentAction = idleAction;
@@ -410,27 +414,30 @@ function animate() {
     }
 
     // ==========================================
-    // SISTEMA DE ANIMACIONES AVANZADO
+    // MÁQUINA DE ESTADOS DE ANIMACIÓN
     // ==========================================
     if ( playerMixer ) {
         playerMixer.update( frameDelta );
 
-        // Calculamos velocidad horizontal para saber si corremos o estamos quietos
         const velocidadHorizontal = Math.sqrt( playerVelocity.x ** 2 + playerVelocity.z ** 2 );
         const estaCorriendo = velocidadHorizontal > 2.0;
 
-        let accionDeseada = idleAction; // Por defecto está quieto
+        let accionDeseada = idleAction; 
 
-        // Prioridad 1: Si está lanzando, forzamos esa animación
+        // Prioridad 1: Lanzar
         if ( isThrowing && throwAction ) {
             accionDeseada = throwAction;
         } 
-        // Prioridad 2: Si no lanza pero se mueve rápido, está corriendo
-        else if ( estaCorriendo ) {
+        // Prioridad 2: En el aire (Saltar/Caer)
+        else if ( !playerOnFloor && jumpAction ) {
+            accionDeseada = jumpAction;
+        }
+        // Prioridad 3: Correr
+        else if ( estaCorriendo && runAction ) {
             accionDeseada = runAction;
         }
 
-        // Realizamos el cambio suavizado entre animaciones si es necesario
+        // Transición suavizada entre estados
         if ( currentAction !== accionDeseada && accionDeseada ) {
             accionDeseada.reset().fadeIn( 0.2 ).play();
             if ( currentAction ) {
