@@ -10,6 +10,16 @@ import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
 const timer = new THREE.Timer();
 timer.connect( document );
 
+// ==========================================
+// VARIABLES DEL JUGADOR Y ANIMACIONES
+// ==========================================
+let playerModel;
+let playerMixer;
+let idleAction, runAction, throwAction, currentAction;
+let isThirdPerson = true; 
+let isThrowing = false; // Bandera para saber si está lanzando
+// ==========================================
+
 const scene = new THREE.Scene();
 scene.background = new THREE.Color( 0x88ccee );
 scene.fog = new THREE.Fog( 0x88ccee, 0, 50 );
@@ -47,7 +57,6 @@ renderer.shadowMap.type = THREE.VSMShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 container.appendChild( renderer.domElement );
 
-// Configuración de Stats (FPS)
 const stats = new Stats();
 stats.domElement.style.position = 'absolute';
 stats.domElement.style.top = '75px'; 
@@ -61,43 +70,41 @@ const NUM_PROJECTILES = 100;
 const PROJECTILE_RADIUS = 0.2;
 const STEPS_PER_FRAME = 5;
 
-// ==========================================
-// CREACIÓN DE LOS DIAMANTES
-// ==========================================
-// OctahedronGeometry con detalle 0 da la forma de un diamante/cristal
+// CREACIÓN DE LOS DIAMANTES NEÓN
 const diamondGeometry = new THREE.OctahedronGeometry( PROJECTILE_RADIUS, 0 );
-
-// Material brillante estilo joya/neón
 const diamondMaterial = new THREE.MeshStandardMaterial( { 
-    color: 0xff00ea,    // Magenta Neón muy llamativo
-    roughness: 0.2,     // Superficie un poco lisa
-    metalness: 0.8,     // Refleja la luz como metal/cristal
-    flatShading: true   // Marca bien las caras del diamante (low-poly style)
+    color: 0xff00ea,    
+    roughness: 0.2,     
+    metalness: 0.8,     
+    flatShading: true   
 } );
 
 const projectiles = [];
 let projectileIdx = 0;
 
 for ( let i = 0; i < NUM_PROJECTILES; i ++ ) {
-
     const diamondMesh = new THREE.Mesh( diamondGeometry, diamondMaterial );
     diamondMesh.castShadow = true;
     diamondMesh.receiveShadow = true;
-
     scene.add( diamondMesh );
-
-    // Conservamos la física de esfera para las colisiones (collider)
     projectiles.push( {
         mesh: diamondMesh,
         collider: new THREE.Sphere( new THREE.Vector3( 0, - 100, 0 ), PROJECTILE_RADIUS ),
         velocity: new THREE.Vector3()
     } );
-
 }
-// ==========================================
 
 const worldOctree = new Octree();
-const playerCollider = new Capsule( new THREE.Vector3( 0, 0.35, 0 ), new THREE.Vector3( 0, 1, 0 ), 0.35 );
+
+const spawnX = 0;
+const spawnY = 10;
+const spawnZ = 0;
+
+const playerCollider = new Capsule( 
+    new THREE.Vector3( spawnX, spawnY + 0.35, spawnZ ), 
+    new THREE.Vector3( spawnX, spawnY + 1, spawnZ ), 
+    0.35 
+);
 
 const playerVelocity = new THREE.Vector3();
 const playerDirection = new THREE.Vector3();
@@ -106,13 +113,19 @@ let playerOnFloor = false;
 let mouseTime = 0;
 
 const keyStates = {};
-
 const vector1 = new THREE.Vector3();
 const vector2 = new THREE.Vector3();
 const vector3 = new THREE.Vector3();
 
 document.addEventListener( 'keydown', ( event ) => {
     keyStates[ event.code ] = true;
+
+    if ( event.code === 'KeyR' && !event.repeat ) {
+        isThirdPerson = !isThirdPerson;
+        if ( playerModel ) {
+            playerModel.visible = isThirdPerson;
+        }
+    }
 } );
 
 document.addEventListener( 'keyup', ( event ) => {
@@ -146,6 +159,7 @@ function onWindowResize() {
 function throwBall() {
     const projectile = projectiles[ projectileIdx ];
     camera.getWorldDirection( playerDirection );
+    
     projectile.collider.center.copy( playerCollider.end ).addScaledVector( playerDirection, playerCollider.radius * 1.5 );
 
     const impulse = 15 + 30 * ( 1 - Math.exp( ( mouseTime - performance.now() ) * 0.001 ) );
@@ -153,6 +167,11 @@ function throwBall() {
     projectile.velocity.addScaledVector( playerVelocity, 2 );
 
     projectileIdx = ( projectileIdx + 1 ) % projectiles.length;
+
+    // Activamos la bandera de animación de lanzamiento/ataque
+    if ( throwAction ) {
+        isThrowing = true;
+    }
 }
 
 function playerCollisions() {
@@ -161,7 +180,6 @@ function playerCollisions() {
 
     if ( result ) {
         playerOnFloor = result.normal.y >= 0.15;
-
         if ( ! playerOnFloor ) {
             playerVelocity.addScaledVector( result.normal, - result.normal.dot( playerVelocity ) );
         }
@@ -184,7 +202,21 @@ function updatePlayer( deltaTime ) {
     playerCollider.translate( deltaPosition );
 
     playerCollisions();
-    camera.position.copy( playerCollider.end );
+
+    // Lógica del Modelo 3D (Tercera Persona)
+    if ( playerModel ) {
+        playerModel.position.copy( playerCollider.start );
+        playerModel.position.y -= playerCollider.radius; 
+        playerModel.rotation.y = camera.rotation.y + Math.PI; 
+    }
+
+    camera.position.copy( playerCollider.end ); 
+
+    if ( isThirdPerson ) {
+        const cameraOffset = new THREE.Vector3( 0, 0.5, 3 ); 
+        cameraOffset.applyQuaternion( camera.quaternion ); 
+        camera.position.add( cameraOffset ); 
+    }
 }
 
 function playerSphereCollision( projectile ) {
@@ -195,15 +227,12 @@ function playerSphereCollision( projectile ) {
 
     for ( const point of [ playerCollider.start, playerCollider.end, center ] ) {
         const d2 = point.distanceToSquared( sphere_center );
-
         if ( d2 < r2 ) {
             const normal = vector1.subVectors( point, sphere_center ).normalize();
             const v1 = vector2.copy( normal ).multiplyScalar( normal.dot( playerVelocity ) );
             const v2 = vector3.copy( normal ).multiplyScalar( normal.dot( projectile.velocity ) );
-
             playerVelocity.add( v2 ).sub( v1 );
             projectile.velocity.add( v1 ).sub( v2 );
-
             const d = ( r - Math.sqrt( d2 ) ) / 2;
             sphere_center.addScaledVector( normal, - d );
         }
@@ -213,21 +242,17 @@ function playerSphereCollision( projectile ) {
 function spheresCollisions() {
     for ( let i = 0, length = projectiles.length; i < length; i ++ ) {
         const s1 = projectiles[ i ];
-
         for ( let j = i + 1; j < length; j ++ ) {
             const s2 = projectiles[ j ];
             const d2 = s1.collider.center.distanceToSquared( s2.collider.center );
             const r = s1.collider.radius + s2.collider.radius;
             const r2 = r * r;
-
             if ( d2 < r2 ) {
                 const normal = vector1.subVectors( s1.collider.center, s2.collider.center ).normalize();
                 const v1 = vector2.copy( normal ).multiplyScalar( normal.dot( s1.velocity ) );
                 const v2 = vector3.copy( normal ).multiplyScalar( normal.dot( s2.velocity ) );
-
                 s1.velocity.add( v2 ).sub( v1 );
                 s2.velocity.add( v1 ).sub( v2 );
-
                 const d = ( r - Math.sqrt( d2 ) ) / 2;
                 s1.collider.center.addScaledVector( normal, d );
                 s2.collider.center.addScaledVector( normal, - d );
@@ -240,14 +265,12 @@ function updateSpheres( deltaTime ) {
     projectiles.forEach( projectile => {
         projectile.collider.center.addScaledVector( projectile.velocity, deltaTime );
         const result = worldOctree.sphereIntersect( projectile.collider );
-
         if ( result ) {
             projectile.velocity.addScaledVector( result.normal, - result.normal.dot( projectile.velocity ) * 1.5 );
             projectile.collider.center.add( result.normal.multiplyScalar( result.depth ) );
         } else {
             projectile.velocity.y -= GRAVITY * deltaTime;
         }
-
         const damping = Math.exp( - 1.5 * deltaTime ) - 1;
         projectile.velocity.addScaledVector( projectile.velocity, damping );
         playerSphereCollision( projectile );
@@ -255,11 +278,8 @@ function updateSpheres( deltaTime ) {
 
     spheresCollisions();
 
-    // Actualizamos la posición visual de los diamantes y les añadimos rotación
     for ( const projectile of projectiles ) {
         projectile.mesh.position.copy( projectile.collider.center );
-        
-        // Hacemos que el diamante rote basándose en su velocidad
         if ( projectile.velocity.lengthSq() > 0.1 ) {
             projectile.mesh.rotation.x += projectile.velocity.y * deltaTime * 0.5;
             projectile.mesh.rotation.y += projectile.velocity.x * deltaTime * 0.5;
@@ -286,58 +306,91 @@ function getSideVector() {
 function controls( deltaTime ) {
     const speedDelta = deltaTime * ( playerOnFloor ? 25 : 8 );
 
-    if ( keyStates[ 'KeyW' ] ) {
-        playerVelocity.add( getForwardVector().multiplyScalar( speedDelta ) );
-    }
-    if ( keyStates[ 'KeyS' ] ) {
-        playerVelocity.add( getForwardVector().multiplyScalar( - speedDelta ) );
-    }
-    if ( keyStates[ 'KeyA' ] ) {
-        playerVelocity.add( getSideVector().multiplyScalar( - speedDelta ) );
-    }
-    if ( keyStates[ 'KeyD' ] ) {
-        playerVelocity.add( getSideVector().multiplyScalar( speedDelta ) );
-    }
-    if ( playerOnFloor ) {
-        if ( keyStates[ 'Space' ] ) {
-            playerVelocity.y = 15;
-        }
+    if ( keyStates[ 'KeyW' ] ) playerVelocity.add( getForwardVector().multiplyScalar( speedDelta ) );
+    if ( keyStates[ 'KeyS' ] ) playerVelocity.add( getForwardVector().multiplyScalar( - speedDelta ) );
+    if ( keyStates[ 'KeyA' ] ) playerVelocity.add( getSideVector().multiplyScalar( - speedDelta ) );
+    if ( keyStates[ 'KeyD' ] ) playerVelocity.add( getSideVector().multiplyScalar( speedDelta ) );
+    
+    if ( playerOnFloor && keyStates[ 'Space' ] ) {
+        playerVelocity.y = 15;
     }
 }
 
 const loader = new GLTFLoader().setPath( './assets/models/gltf/' );
 
-loader.load( 'cityam.glb', ( gltf ) => { //mally_market.glb    fruzer.glb    cityam.glb
-
+// CARGAR EL MAPA
+loader.load( 'cityam.glb', ( gltf ) => { 
     scene.add( gltf.scene );
     worldOctree.fromGraphNode( gltf.scene );
-
     gltf.scene.traverse( child => {
         if ( child.isMesh ) {
             child.castShadow = true;
             child.receiveShadow = true;
-            if ( child.material.map ) {
-                child.material.map.anisotropy = 4;
-            }
+            if ( child.material.map ) child.material.map.anisotropy = 4;
         }
     } );
-
     const helper = new OctreeHelper( worldOctree );
     helper.visible = false;
     scene.add( helper );
-
     const gui = new GUI( { width: 200 } );
-    gui.add( { debug: false }, 'debug' )
-        .onChange( function ( value ) {
-            helper.visible = value;
-        } );
+    gui.add( { debug: false }, 'debug' ).onChange( function ( value ) { helper.visible = value; } );
+} );
 
+// ==========================================
+// CARGAR EL PERSONAJE PROPIO (personajef.glb)
+// ==========================================
+loader.load( 'minihuman.glb', ( gltf ) => {
+    playerModel = gltf.scene;
+    playerModel.scale.set( 0.5, 0.5, 0.5 ); 
+
+    playerModel.traverse( child => {
+        if ( child.isMesh ) {
+            child.castShadow = true;
+            child.receiveShadow = true;
+        }
+    } );
+
+    playerModel.visible = isThirdPerson;
+    scene.add( playerModel );
+
+    if ( gltf.animations && gltf.animations.length > 0 ) {
+        playerMixer = new THREE.AnimationMixer( playerModel );
+        
+        // Evento: Al terminar la animación de lanzar, apagamos la bandera
+        playerMixer.addEventListener('finished', (e) => {
+            if (e.action === throwAction) {
+                isThrowing = false;
+            }
+        });
+
+        // =========================================================
+        // CONFIGURACIÓN DE LOS ÍNDICES DE ANIMACIÓN
+        // Si notas que al correr hace la animación de atacar,
+        // simplemente intercambia estos números (0, 1 y 2).
+        // =========================================================
+        const iQuieto = 0; 
+        const iCorrer = 1; 
+        const iLanzar = 2; 
+
+        idleAction = playerMixer.clipAction( gltf.animations[iQuieto] );
+        runAction = playerMixer.clipAction( gltf.animations[iCorrer] );
+        
+        // Configuramos la de lanzar para que solo se reproduzca UNA vez
+        if (gltf.animations.length > 2) {
+            throwAction = playerMixer.clipAction( gltf.animations[iLanzar] );
+            throwAction.setLoop( THREE.LoopOnce, 1 );
+            throwAction.clampWhenFinished = true;
+        }
+
+        currentAction = idleAction;
+        currentAction.play();
+    }
 } );
 
 function teleportPlayerIfOob() {
     if ( camera.position.y <= - 25 ) {
-        playerCollider.start.set( 0, 0.5, 0 );
-        playerCollider.end.set( 0, 1, 0 );
+        playerCollider.start.set( spawnX, spawnY + 0.35, spawnZ );
+        playerCollider.end.set( spawnX, spawnY + 1, spawnZ );
         playerCollider.radius = 0.35;
         camera.position.copy( playerCollider.end );
         camera.rotation.set( 0, 0, 0 );
@@ -346,13 +399,45 @@ function teleportPlayerIfOob() {
 
 function animate() {
     timer.update();
-    const deltaTime = Math.min( 0.05, timer.getDelta() ) / STEPS_PER_FRAME;
+    const frameDelta = timer.getDelta();
+    const deltaTime = Math.min( 0.05, frameDelta ) / STEPS_PER_FRAME;
 
     for ( let i = 0; i < STEPS_PER_FRAME; i ++ ) {
         controls( deltaTime );
         updatePlayer( deltaTime );
         updateSpheres( deltaTime );
         teleportPlayerIfOob();
+    }
+
+    // ==========================================
+    // SISTEMA DE ANIMACIONES AVANZADO
+    // ==========================================
+    if ( playerMixer ) {
+        playerMixer.update( frameDelta );
+
+        // Calculamos velocidad horizontal para saber si corremos o estamos quietos
+        const velocidadHorizontal = Math.sqrt( playerVelocity.x ** 2 + playerVelocity.z ** 2 );
+        const estaCorriendo = velocidadHorizontal > 2.0;
+
+        let accionDeseada = idleAction; // Por defecto está quieto
+
+        // Prioridad 1: Si está lanzando, forzamos esa animación
+        if ( isThrowing && throwAction ) {
+            accionDeseada = throwAction;
+        } 
+        // Prioridad 2: Si no lanza pero se mueve rápido, está corriendo
+        else if ( estaCorriendo ) {
+            accionDeseada = runAction;
+        }
+
+        // Realizamos el cambio suavizado entre animaciones si es necesario
+        if ( currentAction !== accionDeseada && accionDeseada ) {
+            accionDeseada.reset().fadeIn( 0.2 ).play();
+            if ( currentAction ) {
+                currentAction.fadeOut( 0.2 );
+            }
+            currentAction = accionDeseada;
+        }
     }
 
     renderer.render( scene, camera );
