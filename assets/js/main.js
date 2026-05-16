@@ -17,12 +17,16 @@ let playerModel;
 let playerMixer;
 let idleAction, runAction, throwAction, jumpAction, currentAction;
 let isThirdPerson = true; 
-let isThrowing = false; // Bandera para saber si está lanzando
+let isThrowing = false; 
+
+// NUEVO: Variables para la Cámara Libre
+let isFreeCamera = false;
+const freeCameraVelocity = new THREE.Vector3();
 // ==========================================
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color( 0x88ccee );
-scene.fog = new THREE.Fog( 0x88ccee, 0, 50 );
+scene.fog = new THREE.Fog( 0x88ccee, 20, 200 );
 
 const camera = new THREE.PerspectiveCamera( 70, window.innerWidth / window.innerHeight, 0.1, 1000 );
 camera.rotation.order = 'YXZ';
@@ -120,11 +124,23 @@ const vector3 = new THREE.Vector3();
 document.addEventListener( 'keydown', ( event ) => {
     keyStates[ event.code ] = true;
 
-    // Alternar cámara
+    // Alternar cámara Tercera/Primera persona
     if ( event.code === 'KeyR' && !event.repeat ) {
-        isThirdPerson = !isThirdPerson;
-        if ( playerModel ) {
-            playerModel.visible = isThirdPerson;
+        if (!isFreeCamera) { // Solo si NO estamos en cámara libre
+            isThirdPerson = !isThirdPerson;
+            if ( playerModel ) playerModel.visible = isThirdPerson;
+        }
+    }
+
+    // NUEVO: Alternar Cámara Libre
+    if ( event.code === 'KeyT' && !event.repeat ) {
+        isFreeCamera = !isFreeCamera;
+        if ( isFreeCamera ) {
+            // Aseguramos que el jugador se vuelva visible al desacoplar la cámara
+            if ( playerModel ) playerModel.visible = true;
+        } else {
+            // Restauramos la visibilidad según estemos en 1ra o 3ra persona al regresar
+            if ( playerModel ) playerModel.visible = isThirdPerson;
         }
     }
 } );
@@ -161,16 +177,23 @@ function throwBall() {
     const projectile = projectiles[ projectileIdx ];
     camera.getWorldDirection( playerDirection );
     
-    projectile.collider.center.copy( playerCollider.end ).addScaledVector( playerDirection, playerCollider.radius * 1.5 );
+    // Si la cámara es libre, disparamos desde la cámara, si no, desde la cabeza del jugador
+    const spawnPosition = isFreeCamera ? camera.position : playerCollider.end;
+    
+    projectile.collider.center.copy( spawnPosition ).addScaledVector( playerDirection, playerCollider.radius * 1.5 );
 
     const impulse = 15 + 30 * ( 1 - Math.exp( ( mouseTime - performance.now() ) * 0.001 ) );
     projectile.velocity.copy( playerDirection ).multiplyScalar( impulse );
-    projectile.velocity.addScaledVector( playerVelocity, 2 );
+    
+    // No sumamos la velocidad del jugador si estamos volando en modo espectador
+    if ( !isFreeCamera ) {
+        projectile.velocity.addScaledVector( playerVelocity, 2 );
+    }
 
     projectileIdx = ( projectileIdx + 1 ) % projectiles.length;
 
-    // Activamos la bandera de animación de lanzamiento
-    if ( throwAction ) {
+    // Solo activamos la animación de lanzar si controlamos al personaje
+    if ( throwAction && !isFreeCamera ) {
         isThrowing = true;
     }
 }
@@ -208,15 +231,22 @@ function updatePlayer( deltaTime ) {
     if ( playerModel ) {
         playerModel.position.copy( playerCollider.start );
         playerModel.position.y -= playerCollider.radius; 
-        playerModel.rotation.y = camera.rotation.y + Math.PI; 
+        
+        // El personaje solo rota con la cámara si lo estamos controlando
+        if ( !isFreeCamera ) {
+            playerModel.rotation.y = camera.rotation.y + Math.PI; 
+        }
     }
 
-    camera.position.copy( playerCollider.end ); 
+    // Si NO estamos en cámara libre, la cámara se acopla al personaje
+    if ( !isFreeCamera ) {
+        camera.position.copy( playerCollider.end ); 
 
-    if ( isThirdPerson ) {
-        const cameraOffset = new THREE.Vector3( 0, 0.5, 3 ); 
-        cameraOffset.applyQuaternion( camera.quaternion ); 
-        camera.position.add( cameraOffset ); 
+        if ( isThirdPerson ) {
+            const cameraOffset = new THREE.Vector3( 0, 0.5, 3 ); 
+            cameraOffset.applyQuaternion( camera.quaternion ); 
+            camera.position.add( cameraOffset ); 
+        }
     }
 }
 
@@ -291,29 +321,55 @@ function updateSpheres( deltaTime ) {
 
 function getForwardVector() {
     camera.getWorldDirection( playerDirection );
-    playerDirection.y = 0;
+    // En modo espectador podemos volar en cualquier ángulo (no capamos el eje Y)
+    if ( !isFreeCamera ) {
+        playerDirection.y = 0;
+    }
     playerDirection.normalize();
     return playerDirection;
 }
 
 function getSideVector() {
     camera.getWorldDirection( playerDirection );
-    playerDirection.y = 0;
+    if ( !isFreeCamera ) {
+        playerDirection.y = 0;
+    }
     playerDirection.normalize();
     playerDirection.cross( camera.up );
     return playerDirection;
 }
 
 function controls( deltaTime ) {
-    const speedDelta = deltaTime * ( playerOnFloor ? 25 : 8 );
+    // Si estamos en cámara libre, controlamos la cámara directamente
+    if ( isFreeCamera ) {
+        const speedDelta = deltaTime * 30; // Velocidad de vuelo
 
-    if ( keyStates[ 'KeyW' ] ) playerVelocity.add( getForwardVector().multiplyScalar( speedDelta ) );
-    if ( keyStates[ 'KeyS' ] ) playerVelocity.add( getForwardVector().multiplyScalar( - speedDelta ) );
-    if ( keyStates[ 'KeyA' ] ) playerVelocity.add( getSideVector().multiplyScalar( - speedDelta ) );
-    if ( keyStates[ 'KeyD' ] ) playerVelocity.add( getSideVector().multiplyScalar( speedDelta ) );
-    
-    if ( playerOnFloor && keyStates[ 'Space' ] ) {
-        playerVelocity.y = 15;
+        if ( keyStates[ 'KeyW' ] ) freeCameraVelocity.add( getForwardVector().multiplyScalar( speedDelta ) );
+        if ( keyStates[ 'KeyS' ] ) freeCameraVelocity.add( getForwardVector().multiplyScalar( - speedDelta ) );
+        if ( keyStates[ 'KeyA' ] ) freeCameraVelocity.add( getSideVector().multiplyScalar( - speedDelta ) );
+        if ( keyStates[ 'KeyD' ] ) freeCameraVelocity.add( getSideVector().multiplyScalar( speedDelta ) );
+        if ( keyStates[ 'Space' ] ) freeCameraVelocity.y += speedDelta; // Volar hacia arriba
+        if ( keyStates[ 'ShiftLeft' ] ) freeCameraVelocity.y -= speedDelta; // Volar hacia abajo
+
+        // Fricción suave de la cámara
+        const damping = Math.exp( - 8 * deltaTime ) - 1;
+        freeCameraVelocity.addScaledVector( freeCameraVelocity, damping );
+        
+        camera.position.addScaledVector( freeCameraVelocity, deltaTime );
+
+    } 
+    // Si no, controlamos al personaje
+    else {
+        const speedDelta = deltaTime * ( playerOnFloor ? 25 : 8 );
+
+        if ( keyStates[ 'KeyW' ] ) playerVelocity.add( getForwardVector().multiplyScalar( speedDelta ) );
+        if ( keyStates[ 'KeyS' ] ) playerVelocity.add( getForwardVector().multiplyScalar( - speedDelta ) );
+        if ( keyStates[ 'KeyA' ] ) playerVelocity.add( getSideVector().multiplyScalar( - speedDelta ) );
+        if ( keyStates[ 'KeyD' ] ) playerVelocity.add( getSideVector().multiplyScalar( speedDelta ) );
+        
+        if ( playerOnFloor && keyStates[ 'Space' ] ) {
+            playerVelocity.y = 15;
+        }
     }
 }
 
@@ -342,7 +398,7 @@ loader.load( 'cityam.glb', ( gltf ) => {
 // ==========================================
 loader.load( 'minihuman.glb', ( gltf ) => {
     playerModel = gltf.scene;
-    playerModel.scale.set( 0.5, 0.5, 0.5 ); // Escala del personaje
+    playerModel.scale.set( 0.5, 0.5, 0.5 ); 
 
     playerModel.traverse( child => {
         if ( child.isMesh ) {
@@ -357,14 +413,12 @@ loader.load( 'minihuman.glb', ( gltf ) => {
     if ( gltf.animations && gltf.animations.length > 0 ) {
         playerMixer = new THREE.AnimationMixer( playerModel );
         
-        // Al terminar de lanzar, regresar bandera a false
         playerMixer.addEventListener('finished', (e) => {
             if (e.action === throwAction) {
                 isThrowing = false;
             }
         });
 
-        // ÍNDICES DE ANIMACIÓN
         const iQuieto = 0; 
         const iCorrer = 1; 
         const iLanzar = 2; 
@@ -396,8 +450,11 @@ function teleportPlayerIfOob() {
         playerCollider.start.set( spawnX, spawnY + 0.35, spawnZ );
         playerCollider.end.set( spawnX, spawnY + 1, spawnZ );
         playerCollider.radius = 0.35;
-        camera.position.copy( playerCollider.end );
-        camera.rotation.set( 0, 0, 0 );
+        
+        if ( !isFreeCamera ) {
+            camera.position.copy( playerCollider.end );
+            camera.rotation.set( 0, 0, 0 );
+        }
     }
 }
 
@@ -424,20 +481,16 @@ function animate() {
 
         let accionDeseada = idleAction; 
 
-        // Prioridad 1: Lanzar
         if ( isThrowing && throwAction ) {
             accionDeseada = throwAction;
         } 
-        // Prioridad 2: En el aire (Saltar/Caer)
         else if ( !playerOnFloor && jumpAction ) {
             accionDeseada = jumpAction;
         }
-        // Prioridad 3: Correr
         else if ( estaCorriendo && runAction ) {
             accionDeseada = runAction;
         }
 
-        // Transición suavizada entre estados
         if ( currentAction !== accionDeseada && accionDeseada ) {
             accionDeseada.reset().fadeIn( 0.2 ).play();
             if ( currentAction ) {
