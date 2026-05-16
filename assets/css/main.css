@@ -3,7 +3,8 @@
     --hud-cyan: #00e5ff;
     --hud-orange: #ff9d00;
     --hud-green: #39ff14;
-    --dark-glass: rgba(8, 10, 15, 0.9); /* Cristal más opaco para mayor contraste */
+    --dark-glass: rgba(8, 10, 15, 0.9);
+    /* Cristal más opaco para mayor contraste */
     --font-head: 'Orbitron', sans-serif;
     --font-ui: 'Rajdhani', sans-serif;
 }
@@ -31,12 +32,14 @@ body {
    ========================================= */
 .crosshair {
     position: fixed;
-    top: 50%; left: 50%;
+    top: 50%;
+    left: 50%;
     transform: translate(-50%, -50%);
-    width: 24px; height: 24px;
+    width: 24px;
+    height: 24px;
     z-index: 6;
     pointer-events: none;
-    background: 
+    background:
         linear-gradient(to right, transparent 45%, var(--hud-cyan) 45%, var(--hud-cyan) 55%, transparent 55%),
         linear-gradient(to bottom, transparent 45%, var(--hud-cyan) 45%, var(--hud-cyan) 55%, transparent 55%);
     border-radius: 50%;
@@ -52,7 +55,8 @@ body {
     pointer-events: none;
 }
 
-.custom-ui .container-fluid, .custom-ui .hud-badge {
+.custom-ui .container-fluid,
+.custom-ui .hud-badge {
     pointer-events: auto;
 }
 
@@ -105,14 +109,32 @@ body {
 }
 
 /* Variaciones de colores temáticos */
-.theme-cyan { border-bottom: 3px solid var(--hud-cyan); }
-.theme-cyan .icon-glow { color: var(--hud-cyan); text-shadow: 0 0 8px var(--hud-cyan); }
+.theme-cyan {
+    border-bottom: 3px solid var(--hud-cyan);
+}
 
-.theme-orange { border-bottom: 3px solid var(--hud-orange); }
-.theme-orange .icon-glow { color: var(--hud-orange); text-shadow: 0 0 8px var(--hud-orange); }
+.theme-cyan .icon-glow {
+    color: var(--hud-cyan);
+    text-shadow: 0 0 8px var(--hud-cyan);
+}
 
-.theme-green { border-bottom: 3px solid var(--hud-green); }
-.theme-green .icon-glow { color: var(--hud-green); text-shadow: 0 0 8px var(--hud-green); }
+.theme-orange {
+    border-bottom: 3px solid var(--hud-orange);
+}
+
+.theme-orange .icon-glow {
+    color: var(--hud-orange);
+    text-shadow: 0 0 8px var(--hud-orange);
+}
+
+.theme-green {
+    border-bottom: 3px solid var(--hud-green);
+}
+
+.theme-green .icon-glow {
+    color: var(--hud-green);
+    text-shadow: 0 0 8px var(--hud-green);
+}
 
 /* Footer status */
 .system-status {
@@ -125,7 +147,8 @@ body {
 
 .status-dot {
     display: inline-block;
-    width: 8px; height: 8px;
+    width: 8px;
+    height: 8px;
     background-color: var(--hud-green);
     border-radius: 50%;
     margin-right: 5px;
@@ -133,17 +156,20 @@ body {
     animation: blink 1.5s infinite;
 }
 
-.hud-label { 
-    color: var(--hud-orange); 
-    font-family: var(--font-head); 
-    font-size: 0.8rem; 
-    letter-spacing: 1px; 
+.hud-label {
+    color: var(--hud-orange);
+    font-family: var(--font-head);
+    font-size: 0.8rem;
+    letter-spacing: 1px;
 }
-.tracking-wide { letter-spacing: 1px; }
+
+.tracking-wide {
+    letter-spacing: 1px;
+}
 
 /* Menú de Three.js */
 .lil-gui {
-    z-index: 20 !important; 
+    z-index: 20 !important;
     margin-top: 80px;
     margin-right: 15px;
     --background-color: rgba(8, 10, 15, 0.9);
@@ -159,12 +185,70 @@ body {
 
 /* Animaciones */
 @keyframes pulse {
-    0% { opacity: 0.7; transform: scale(0.95); }
-    50% { opacity: 1; transform: scale(1.05); }
-    100% { opacity: 0.7; transform: scale(0.95); }
+    0% {
+        opacity: 0.7;
+        transform: scale(0.95);
+    }
+
+    50% {
+        opacity: 1;
+        transform: scale(1.05);
+    }
+
+    100% {
+        opacity: 0.7;
+        transform: scale(0.95);
+    }
 }
 
 @keyframes blink {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.3; }
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.3;
+    }
+}
+
+/* =========================================
+   PANTALLA DE CARGA (LOADING SCREEN)
+   ========================================= */
+.loading-screen {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background-color: #030305;
+    z-index: 9999;
+    /* Por encima de todo */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: opacity 0.8s ease-out, visibility 0.8s ease-out;
+}
+
+.loading-screen.fade-out {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+}
+
+.custom-progress {
+    width: 300px;
+    height: 8px;
+    background-color: rgba(0, 229, 255, 0.1);
+    border: 1px solid rgba(0, 229, 255, 0.3);
+    border-radius: 4px;
+    overflow: hidden;
+    margin: 0 auto;
+}
+
+.custom-progress-bar {
+    background-color: var(--hud-cyan);
+    box-shadow: 0 0 10px var(--hud-cyan);
+    transition: width 0.3s ease;
 }
