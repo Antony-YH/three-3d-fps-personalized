@@ -423,9 +423,9 @@ loader.load('cityam.glb', (gltf) => {
     gui.add({ debug: false }, 'debug').onChange(function (value) { helper.visible = value; });
 });
 
-// ==========================================
-// CARGAR EL PERSONAJE PROPIO (personajef.glb)
-// ==========================================
+// ============================
+// CARGAR EL PERSONAJE PROPIO 
+// ============================
 loader.load('minihuman.glb', (gltf) => {
     playerModel = gltf.scene;
     playerModel.scale.set(0.5, 0.5, 0.5);
